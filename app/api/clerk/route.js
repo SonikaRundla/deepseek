@@ -1,45 +1,71 @@
-import { Webhook} from "svix";
-import connectDB from "@/congif/db";
-import User from "@/models/User"
-import { NextRequest } from "next/server";
-import{ headers } from "next/headers"
+import { Webhook } from "svix";
+import connectDB from "@/config/db";
+import User from "@/models/User";
+import { headers } from "next/headers";
+import { NextResponse } from "next/server";
 
-export async function POST(req){
-    const wh = new Webhook(process.env,SIGNING_SECRET)
-    const headerPayLoad = await headers()
-    const svixHeaders = {
-        "svix-id": headerPayLoad.get("svix-id"),
-        "svix-signature": headerPayLoad.get("svix-signature"),
-    };
+export async function POST(req) {
+  const SIGNING_SECRET = process.env.CLERK_WEBHOOK_SECRET;
 
-    //get the payload and verify it 
-    const payload = await req.json();
-    const body = JSON.stringify(payload);
-    const {data, type} = wh.verify(body, svixHeaders)
+  if (!SIGNING_SECRET) {
+    return NextResponse.json(
+      { error: "Missing Clerk webhook secret" },
+      { status: 500 }
+    );
+  }
 
-    //Prepare the user data to be saved in the database 
-    const userData = {
-        _id: data.id,
-        email: data.email_addresses[0].email_addresses,
-        name: `${data.first_name} ${data.last_name}`,
-        image: data.iamge_url,
-    };
+  const wh = new Webhook(SIGNING_SECRET);
 
-    await connectDB();
-    switch(type){
-        case 'user.created':
-            await User.created(userData)
-            break;
-        case 'user.update':
-            await User.findByIdAndUpdate(data.id, userData)
-            break;
+  // ✅ headers() MUST be awaited
+  const headerPayload = await headers();
 
-        case 'user.deleted':
-            await User.findByIdDelete(data.id)
-            break;
+  const svixHeaders = {
+    "svix-id": headerPayload.get("svix-id"),
+    "svix-timestamp": headerPayload.get("svix-timestamp"),
+    "svix-signature": headerPayload.get("svix-signature"),
+  };
 
-        default:
-            break;
-    }
-    return NextRequest.json({message: "Event received"});
+  // ✅ Get RAW body (this is the real fix)
+  const body = await req.text();
+
+  let event;
+  try {
+    event = wh.verify(body, svixHeaders);
+  } catch (err) {
+    console.error("Webhook verification error:", err);
+    return NextResponse.json(
+      { error: "Invalid webhook signature" },
+      { status: 400 }
+    );
+  }
+
+  const { data, type } = event;
+
+  const userData = {
+    _id: data.id,
+    email: data.email_addresses?.[0]?.email_address || "",
+    name: `${data.first_name || ""} ${data.last_name || ""}`.trim(),
+    image: data.image_url || "",
+  };
+
+  await connectDB();
+
+  switch (type) {
+    case "user.created":
+      await User.create(userData);
+      break;
+
+    case "user.updated":
+      await User.findByIdAndUpdate(data.id, userData);
+      break;
+
+    case "user.deleted":
+      await User.findByIdAndDelete(data.id);
+      break;
+
+    default:
+      break;
+  }
+
+  return NextResponse.json({ success: true });
 }

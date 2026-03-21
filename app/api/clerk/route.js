@@ -1,6 +1,6 @@
 import { Webhook } from "svix";
-import { connectDB } from  "@/config/db";
-import { User } from '@/models/User';
+import connectDB from "@/config/db";
+import User from "@/models/User";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -16,8 +16,7 @@ export async function POST(req) {
 
   const wh = new Webhook(SIGNING_SECRET);
 
-  // ✅ headers() MUST be awaited
-  const headerPayload = await headers();
+  const headerPayload = headers();
 
   const svixHeaders = {
     "svix-id": headerPayload.get("svix-id"),
@@ -25,10 +24,10 @@ export async function POST(req) {
     "svix-signature": headerPayload.get("svix-signature"),
   };
 
-  // ✅ Get RAW body (this is the real fix)
   const body = await req.text();
 
   let event;
+
   try {
     event = wh.verify(body, svixHeaders);
   } catch (err) {

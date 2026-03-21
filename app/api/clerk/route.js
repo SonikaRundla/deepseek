@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
 export async function POST(req) {
+
   const SIGNING_SECRET = process.env.CLERK_WEBHOOK_SECRET;
 
   if (!SIGNING_SECRET) {
@@ -16,7 +17,8 @@ export async function POST(req) {
 
   const wh = new Webhook(SIGNING_SECRET);
 
-  const headerPayload = headers();
+  // IMPORTANT FIX
+  const headerPayload = await headers();
 
   const svixHeaders = {
     "svix-id": headerPayload.get("svix-id"),
